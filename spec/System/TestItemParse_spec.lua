@@ -54,6 +54,26 @@ describe("TestItemParse", function()
 		assert.are.equals(12, item.quality)
 	end)
 
+	it("parses '<element> spell' as a composable Spell + element tag (issue #2226)", function()
+		local item = new("Item", [[
+			Rarity: Rare
+			Xoph's Test Band
+			Amethyst Ring
+			Implicits: 0
+			+5% to Fire Spell Critical Hit Chance
+			+30% to Fire Spell Critical Damage Bonus
+			+7% to Cold Spell Critical Hit Chance
+		]])
+		-- the "fire spell" tag composes with any crit stat (chance and damage bonus)
+		assert.are.equals(5, item.baseModList:Sum("BASE", { flags = ModFlag.Spell, keywordFlags = KeywordFlag.Fire }, "CritChance"))
+		assert.are.equals(30, item.baseModList:Sum("BASE", { flags = ModFlag.Spell, keywordFlags = KeywordFlag.Fire }, "CritMultiplier"))
+		-- ...and works per element
+		assert.are.equals(7, item.baseModList:Sum("BASE", { flags = ModFlag.Spell, keywordFlags = KeywordFlag.Cold }, "CritChance"))
+		-- still correctly scoped: not attacks, and not the wrong element
+		assert.are.equals(0, item.baseModList:Sum("BASE", { flags = ModFlag.Attack, keywordFlags = KeywordFlag.Fire }, "CritChance"))
+		assert.are.equals(0, item.baseModList:Sum("BASE", { flags = ModFlag.Spell, keywordFlags = KeywordFlag.Cold }, "CritMultiplier"))
+	end)
+
 	--TODO: impl sockets for POB2
 	--it("Sockets", function()
 	--end)
@@ -522,6 +542,177 @@ describe("TestItemParse", function()
 		end
 	end)
 
+<<<<<<< HEAD
+=======
+	it("keeps bonded rune stats separate from normal rune stats", function()
+		local item = new("Item", [[
+			Rarity: Rare
+			Test Body
+			Rusted Cuirass
+		]])
+		item.itemSocketCount = 1
+		item.runes = { "Lesser Body Rune" }
+		item:UpdateRunes()
+
+		assert.are.equals(3, #item.runeModLines)
+		assert.are.equals("+30 to maximum Life", item.runeModLines[1].line)
+		assert.are.equals("Bonded: +20 to maximum Life", item.runeModLines[2].line)
+		assert.are.equals("Bonded: +20 to maximum Mana", item.runeModLines[3].line)
+	end)
+
+	it("applies increased effect of socketed runes", function()
+		local item = new("Item", [[
+			Test Wand
+			Runic Fork
+			Sockets: S
+			Rune: Lesser Desert Rune
+			Implicits: 1
+			{enchant}{rune}Gain 6% of Damage as Extra Fire Damage
+			200% increased effect of Socketed Runes
+		]])
+		item:BuildAndParseRaw()
+
+		local damageGainAsFire = 0
+		for _, mod in ipairs(item.slotModList[1]) do
+			if mod.name == "DamageGainAsFire" and mod.type == "BASE" then
+				damageGainAsFire = damageGainAsFire + mod.value
+			end
+		end
+		assert.are.equals(18, damageGainAsFire)
+		assert.is_not_nil(item:BuildRaw():match("{enchant}{rune}Gain 18%% of Damage as Extra Fire Damage"))
+	end)
+
+	it("applies increased effect of socketed augment items", function()
+		local item = new("Item", [[
+			Test Wand
+			Runic Fork
+			Sockets: S
+			Rune: Lesser Desert Rune
+			Implicits: 1
+			{enchant}{rune}Gain 6% of Damage as Extra Fire Damage
+			100% increased effect of Socketed Augment Items
+		]])
+		item:BuildAndParseRaw()
+
+		local damageGainAsFire = 0
+		for _, mod in ipairs(item.slotModList[1]) do
+			if mod.name == "DamageGainAsFire" and mod.type == "BASE" then
+				damageGainAsFire = damageGainAsFire + mod.value
+			end
+		end
+		assert.are.equals(12, damageGainAsFire)
+		assert.is_not_nil(item:BuildRaw():match("{enchant}{rune}Gain 12%% of Damage as Extra Fire Damage"))
+	end)
+
+	it("does not double-scale imported socketed rune text", function()
+		local item = new("Item", [[
+			Runeseeker's Call
+			Runic Fork
+			Unique ID: bbcd083b0a9da5650f3ac0a001364b1c99d6b866c1f52f0568fafab863b44ccb
+			Item Level: 86
+			Quality: 20
+			Sockets: S S S S S S
+			Rune: Hedgewitch Assandra's Rune of Wisdom
+			Rune: Saqawal's Rune of the Sky
+			Rune: Perfect Iron Rune
+			Rune: Perfect Iron Rune
+			Rune: Perfect Vision Rune
+			Rune: Legacy of Lifesprig
+			LevelReq: 90
+			Implicits: 11
+			{enchant}{rune}210% increased Spell Damage
+			{enchant}{rune}+9 to Level of all Spell Skills
+			{enchant}{rune}84% increased Critical Hit Chance for Spells
+			{enchant}{rune}Gain 15% of Damage as Extra Damage of all Elements
+			{enchant}{rune}Bonded: 75% increased Critical Damage Bonus
+			{enchant}{rune}Bonded: 36% chance when collecting an Elemental Infusion to gain an
+			{enchant}{rune}additional Elemental Infusion of the same type
+			{enchant}{rune}Bonded: Archon recovery period expires 90% faster
+			{enchant}{rune}Bonded: Break Armour on Critical Hit with Spells equal to 72% of Physical Damage dealt
+			{enchant}{rune}Bonded: Leeches 3% of maximum Life when you Cast a Spell
+			Grants Skill: Level 20 The Stars Answer
+			Only Runes can be Socketed in this item
+			200% increased effect of Socketed Runes
+			Corrupted
+		]])
+		item:BuildAndParseRaw()
+
+		local spellDamage = 0
+		for _, mod in ipairs(item.slotModList[1]) do
+			if mod.name == "Damage" and mod.type == "INC" and mod.flags == ModFlag.Spell then
+				spellDamage = spellDamage + mod.value
+			end
+		end
+		assert.are.equals(210, spellDamage)
+		local rawItem = item:BuildRaw()
+		assert.is_not_nil(rawItem:match("{enchant}{rune}210%% increased Spell Damage"))
+		assert.is_not_nil(rawItem:match("{enchant}{rune}%+9 to Level of all Spell Skills"))
+	end)
+
+	it("infers pasted game rune lines with socketed rune effect", function()
+		local item = new("Item", [[
+			Item Class: Wands
+			Rarity: Unique
+			Runeseeker's Call
+			Runic Fork
+			--------
+			Quality: +20% (augmented)
+			--------
+			Requires: Level 90 (unmet)
+			--------
+			Sockets: S S S S S
+			--------
+			Item Level: 86
+			--------
+			Gain 120% of Damage as Extra Lightning Damage (rune)
+			Remnants you create have 75% reduced effect (rune)
+			Remnants can be collected from 150% further away (rune)
+			--------
+			Grants Skill: Level 20 The Stars Answer
+			--------
+			{ Unique Modifier }
+			Only Runes can be Socketed in this item — Unscalable Value
+			{ Unique Modifier }
+			200% increased effect of Socketed Runes — Unscalable Value
+			--------
+			Smithed from ancient metal
+			wrought from the very stars.
+			It is a means to call upon them,
+			for one capable of wielding it.
+			--------
+			Corrupted
+		]])
+
+		local damageGainAsLightning = 0
+		for _, mod in ipairs(item.slotModList[1]) do
+			if mod.name == "DamageGainAsLightning" and mod.type == "BASE" then
+				damageGainAsLightning = damageGainAsLightning + mod.value
+			end
+		end
+		assert.are.equals(120, damageGainAsLightning)
+
+		item:BuildAndParseRaw()
+
+		assert.are.equals(5, item.itemSocketCount)
+		assert.are.equals(5, #item.runes)
+		for _, rune in ipairs(item.runes) do
+			assert.are_not.equals("None", rune)
+		end
+
+		damageGainAsLightning = 0
+		for _, mod in ipairs(item.slotModList[1]) do
+			if mod.name == "DamageGainAsLightning" and mod.type == "BASE" then
+				damageGainAsLightning = damageGainAsLightning + mod.value
+			end
+		end
+		assert.are.equals(120, damageGainAsLightning)
+		local rawItem = item:BuildRaw()
+		assert.is_not_nil(rawItem:match("{enchant}{rune}Gain 120%% of Damage as Extra Lightning Damage"))
+		assert.is_not_nil(rawItem:match("{enchant}{rune}Remnants you create have 75%% reduced effect"))
+		assert.is_not_nil(rawItem:match("{enchant}{rune}Remnants can be collected from 150%% further away"))
+	end)
+
+>>>>>>> v0.22.0
 	it("multi-line rune mod", function()
 		-- Thruldana is Bow-only as well
 		local item = new("Item", [[
